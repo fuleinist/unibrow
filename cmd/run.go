@@ -56,14 +56,7 @@ func runPrompt(cmd *cobra.Command, args []string) error {
 	}
 
 	// Handle agent prefix routing: /c, /x, /g
-	prefixedAgent, prompt := parseAgentPrefix(rawPrompt)
-	if prefixedAgent == "" && len(args) > 1 {
-		prompt = strings.Join(args, " ")
-	}
-	if prefixedAgent == "" {
-		prefixedAgent = ""
-		prompt = rawPrompt
-	}
+	prefixedAgent, prompt := resolveRunPrompt(rawPrompt, args)
 
 	// Initialize registry and router
 	registry := agents.InitDefaultRegistry()
@@ -201,6 +194,28 @@ func parseAgentPrefix(prompt string) (string, string) {
 	default:
 		return "", prompt
 	}
+}
+
+// resolveRunPrompt resolves the agent name and full prompt for runPrompt.
+// If rawPrompt starts with a known agent prefix (/c, /x, /g), the prefix is
+// stripped and that agent name is returned. The remaining args (after the
+// prefix token, if any) are joined with spaces so multi-word prompts
+// (e.g. `unibrow run hello world` or `unibrow run /c hello world`) are not
+// truncated to the first word.
+func resolveRunPrompt(rawPrompt string, args []string) (string, string) {
+	prefixedAgent, prompt := parseAgentPrefix(rawPrompt)
+	if prefixedAgent != "" {
+		// The prefix was a standalone token in args[0]; the rest of the
+		// prompt is args[1:].
+		if len(args) > 1 {
+			prompt = strings.Join(args[1:], " ")
+		}
+		return prefixedAgent, prompt
+	}
+	if len(args) > 1 {
+		prompt = strings.Join(args, " ")
+	}
+	return prefixedAgent, prompt
 }
 
 // runDelegate handles /delegate [task] to [agent] syntax.

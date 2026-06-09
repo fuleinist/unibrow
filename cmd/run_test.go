@@ -64,3 +64,32 @@ func TestIsAllCommand(t *testing.T) {
 		})
 	}
 }
+func TestResolveRunPrompt(t *testing.T) {
+	tests := []struct {
+		name      string
+		rawPrompt string
+		args      []string
+		wantAgent string
+		wantRest  string
+	}{
+		{"single arg no prefix", "hello", []string{"hello"}, "", "hello"},
+		{"multi arg joins with spaces", "hello", []string{"hello", "world"}, "", "hello world"},
+		{"three arg join", "fix", []string{"fix", "the", "bug"}, "", "fix the bug"},
+		{"prefix consumes single arg", "/c hello", []string{"/c", "hello"}, "claude", "hello"},
+		{"prefix with multi args joins rest", "/c", []string{"/c", "hello", "world"}, "claude", "hello world"},
+		{"unknown prefix falls through to single arg", "/unknown foo", []string{"/unknown", "foo"}, "", "/unknown foo"},
+		{"empty args slice", "", []string{}, "", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotAgent, gotRest := resolveRunPrompt(tt.rawPrompt, tt.args)
+			if gotAgent != tt.wantAgent {
+				t.Errorf("resolveRunPrompt(%q, %v) agent = %q, want %q", tt.rawPrompt, tt.args, gotAgent, tt.wantAgent)
+			}
+			if gotRest != tt.wantRest {
+				t.Errorf("resolveRunPrompt(%q, %v) rest = %q, want %q", tt.rawPrompt, tt.args, gotRest, tt.wantRest)
+			}
+		})
+	}
+}

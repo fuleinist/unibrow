@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fuleinist/unibrow/internal/agents"
@@ -47,18 +48,18 @@ func runPrompt(cmd *cobra.Command, args []string) error {
 		return runDelegate(rawPrompt)
 	}
 
-	// Handle /all to run all available agents
-	if rawPrompt == "/all" || rawPrompt == "/a" {
-		return runAllAgents(cmd, args[1:])
+	// Handle /all to run all available agents (supports /all foo bar and /a foo bar)
+	if isAllCommand(rawPrompt) {
+		return runAllAgents(cmd, args)
 	}
 
 	// Handle agent prefix routing: /c, /x, /g
-	agentName, prompt := parseAgentPrefix(rawPrompt)
-	if agentName == "" && len(args) > 1 {
+	prefixedAgent, prompt := parseAgentPrefix(rawPrompt)
+	if prefixedAgent == "" && len(args) > 1 {
 		prompt = strings.Join(args, " ")
 	}
-	if agentName == "" {
-		agentName = ""
+	if prefixedAgent == "" {
+		prefixedAgent = ""
 		prompt = rawPrompt
 	}
 
@@ -66,15 +67,23 @@ func runPrompt(cmd *cobra.Command, args []string) error {
 	registry := agents.InitDefaultRegistry()
 	r := router.NewRouter(registry)
 
-	// Determine which agent to use
+	// Determine which agent to use.
+	// Order: --agent flag (wins) → prefix → heuristic.
 	var routeResult router.RouteResult
-	if agentName != "" {
-		agent, ok := registry.Get(agentName)
+	switch {
+	case agentName != "":
+		ag, ok := registry.Get(agentName)
 		if !ok {
 			return fmt.Errorf("unknown agent: %s", agentName)
 		}
-		routeResult = router.RouteResult{AgentName: agentName, Agent: agent, Reason: "explicit prefix"}
-	} else {
+		routeResult = router.RouteResult{AgentName: agentName, Agent: ag, Reason: "explicit flag"}
+	case prefixedAgent != "":
+		ag, ok := registry.Get(prefixedAgent)
+		if !ok {
+			return fmt.Errorf("unknown agent: %s", prefixedAgent)
+		}
+		routeResult = router.RouteResult{AgentName: prefixedAgent, Agent: ag, Reason: "explicit prefix"}
+	default:
 		routeResult = r.Route(prompt)
 	}
 
@@ -204,19 +213,19 @@ func runDelegate(prompt string) error {
 		return fmt.Errorf("delegate syntax: /delegate [task] to [agent]")
 	}
 	task := strings.TrimSpace(parts[0])
-	agentName := strings.TrimSpace(parts[1])
+	target := strings.TrimSpace(parts[1])
 
 	registry := agents.InitDefaultRegistry()
-	agent, ok := registry.Get(agentName)
+	agent, ok := registry.Get(target)
 	if !ok {
-		return fmt.Errorf("unknown agent: %s", agentName)
+		return fmt.Errorf("unknown agent: %s", target)
 	}
 
 	if !agent.IsAvailable() {
-		return fmt.Errorf("agent %s is not available", agentName)
+		return fmt.Errorf("agent %s is not available", target)
 	}
 
-	fmt.Printf("Delegating to %s: %s\n", agentName, task)
+	fmt.Printf("Delegating to %s: %s\n", target, task)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -230,8 +239,33 @@ func runDelegate(prompt string) error {
 	return nil
 }
 
+// isAllCommand reports whether the raw prompt is a /all or /a command
+// (handles both /all alone and /all followed by content).
+func isAllCommand(prompt string) bool {
+	trimmed := strings.TrimSpace(prompt)
+	return trimmed == "/all" || trimmed == "/a" ||
+		strings.HasPrefix(trimmed, "/all ") || strings.HasPrefix(trimmed, "/a ")
+}
+
 // runAllAgents runs the prompt on all available agents in parallel.
-func runAllAgents(cmd *cobra.Command, _ []string) error {
+func runAllAgents(cmd *cobra.Command, args []string) error {
+	// Reconstruct prompt: strip leading /all or /a token from args
+	combined := strings.TrimSpace(strings.Join(args, " "))
+	for _, p := range []string{"/all", "/a"} {
+		if combined == p {
+			combined = ""
+			break
+		}
+		if strings.HasPrefix(combined, p+" ") {
+			combined = strings.TrimSpace(combined[len(p):])
+			break
+		}
+	}
+	if combined == "" {
+		return fmt.Errorf("/all requires a prompt. Use: unibrow run /all [prompt]")
+	}
+	prompt := combined
+
 	registry := agents.InitDefaultRegistry()
 	available := registry.Available()
 
@@ -239,7 +273,38 @@ func runAllAgents(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("no available agents")
 	}
 
-	fmt.Printf("Running on all %d available agents...\n", len(available))
-	fmt.Println("Note: /all requires a prompt. Use: unibrow run /all [prompt]")
+	fmt.Printf("Running on %d available agents in parallel...\n", len(available))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	type result struct {
+		name   string
+		output string
+		err    error
+	}
+	results := make(chan result, len(available))
+	var wg sync.WaitGroup
+
+	for _, ag := range available {
+		wg.Add(1)
+		go func(a agents.Agent) {
+			defer wg.Done()
+			out, runErr := a.Run(ctx, prompt, nil)
+			results <- result{name: a.Name(), output: out, err: runErr}
+		}(ag)
+	}
+
+	wg.Wait()
+	close(results)
+
+	for res := range results {
+		fmt.Printf("\n--- %s ---\n", strings.ToUpper(res.name))
+		if res.err != nil {
+			fmt.Printf("Error: %v\n", res.err)
+			continue
+		}
+		fmt.Println(res.output)
+	}
 	return nil
 }

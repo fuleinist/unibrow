@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -33,7 +32,6 @@ func init() {
 
 func runPrompt(cmd *cobra.Command, args []string) error {
 	rawPrompt := args[0]
-	fmt.Fprintf(os.Stderr, "DEBUG rawPrompt=%q args=%v\n", rawPrompt, args)
 
 	// Parse prefix commands
 	if rawPrompt == "/help" || rawPrompt == "help" {

@@ -112,5 +112,12 @@ func getMemoryDBPath() string {
 			home = usr.HomeDir
 		}
 	}
-	return home + string(os.PathSeparator) + ".unibrow" + string(os.PathSeparator) + "memory.db"
+	dbDir := home + string(os.PathSeparator) + ".unibrow"
+	// Ensure the directory exists before SQLite opens the database
+	if err := os.MkdirAll(dbDir, 0755); err != nil {
+		// Fallback to temp dir if home is not writable
+		dbDir = os.TempDir() + string(os.PathSeparator) + ".unibrow"
+		os.MkdirAll(dbDir, 0755)
+	}
+	return dbDir + string(os.PathSeparator) + "memory.db"
 }

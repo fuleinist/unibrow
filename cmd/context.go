@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/fuleinist/unibrow/internal/memory"
 	"github.com/spf13/cobra"
@@ -79,7 +80,7 @@ func contextShow(cmd *cobra.Command, args []string) error {
 }
 
 func contextAdd(cmd *cobra.Command, args []string) error {
-	content := args[0]
+	content := strings.Join(args, " ")
 
 	store, err := memory.NewStore(getMemoryDBPath())
 	if err != nil {

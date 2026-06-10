@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/fuleinist/unibrow/internal/memory"
@@ -102,6 +103,76 @@ func TestGetVersion(t *testing.T) {
 	}
 	if v != "0.1.0" {
 		t.Errorf("GetVersion = %q, want %q", v, "0.1.0")
+	}
+}
+
+// TestMemoryAddMultiWordArgs verifies that `memory add` stores the
+// full prompt (joined with spaces) when multiple word args are
+// passed, rather than silently truncating to the first word.
+func TestMemoryAddMultiWordArgs(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	// getMemoryDBPath uses os.UserHomeDir which on Linux respects $HOME;
+	// also clear XDG_CONFIG_HOME and other vars that may redirect.
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	words := []string{"hello", "world", "from", "test"}
+	if err := memoryAdd(nil, words); err != nil {
+		t.Fatalf("memoryAdd failed: %v", err)
+	}
+
+	// The store will have written to <tmpDir>/.unibrow/memory.db.
+	store, err := memory.NewStore(filepath.Join(tmpDir, ".unibrow", "memory.db"))
+	if err != nil {
+		t.Fatalf("open store for verification: %v", err)
+	}
+	defer store.Close()
+
+	entries, err := store.List("default")
+	if err != nil {
+		t.Fatalf("list entries: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("len(entries) = %d, want 1", len(entries))
+	}
+	want := strings.Join(words, " ")
+	if entries[0].Content != want {
+		t.Errorf("entry content = %q, want %q", entries[0].Content, want)
+	}
+}
+
+// TestContextAddMultiWordArgs verifies that `context add` stores the
+// full prompt (joined with spaces) when multiple word args are
+// passed, rather than silently truncating to the first word.
+func TestContextAddMultiWordArgs(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	words := []string{"fix", "the", "bug"}
+	if err := contextAdd(nil, words); err != nil {
+		t.Fatalf("contextAdd failed: %v", err)
+	}
+
+	store, err := memory.NewStore(filepath.Join(tmpDir, ".unibrow", "memory.db"))
+	if err != nil {
+		t.Fatalf("open store for verification: %v", err)
+	}
+	defer store.Close()
+
+	entries, err := store.List("default")
+	if err != nil {
+		t.Fatalf("list entries: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("len(entries) = %d, want 1", len(entries))
+	}
+	want := strings.Join(words, " ")
+	if entries[0].Content != want {
+		t.Errorf("entry content = %q, want %q", entries[0].Content, want)
+	}
+	if entries[0].Agent != "context" {
+		t.Errorf("entry agent = %q, want %q", entries[0].Agent, "context")
 	}
 }
 

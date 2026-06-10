@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/user"
+	"strings"
 
 	"github.com/fuleinist/unibrow/internal/memory"
 	"github.com/spf13/cobra"
@@ -46,7 +47,7 @@ var memoryClearCmd = &cobra.Command{
 }
 
 func memoryAdd(cmd *cobra.Command, args []string) error {
-	text := args[0]
+	text := strings.Join(args, " ")
 	store, err := memory.NewStore(getMemoryDBPath())
 	if err != nil {
 		return fmt.Errorf("open store: %w", err)

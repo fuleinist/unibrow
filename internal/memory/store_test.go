@@ -204,6 +204,60 @@ func TestStore_GetRecent(t *testing.T) {
 	}
 }
 
+// TestStore_Count verifies that Count returns the total number of
+// memory entries for a session, not the number returned by a
+// caller-side limit. `context show` relies on this to print
+// "(Showing N of M entries)" with M being the real total — not N.
+func TestStore_Count(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "unibrow-test-*.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpFile.Close()
+	defer os.Remove(tmpFile.Name())
+
+	store, err := NewStore(tmpFile.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	// Empty session: count must be 0, not an error.
+	if n, err := store.Count("session1"); err != nil || n != 0 {
+		t.Errorf("empty Count = (%d, %v), want (0, nil)", n, err)
+	}
+
+	// Add 3 entries for session1, 2 for session2.
+	for i := 0; i < 3; i++ {
+		if _, err := store.Add("session1", "claude", "x"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i < 2; i++ {
+		if _, err := store.Add("session2", "user", "y"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if n, err := store.Count("session1"); err != nil || n != 3 {
+		t.Errorf("session1 Count = (%d, %v), want (3, nil)", n, err)
+	}
+	if n, err := store.Count("session2"); err != nil || n != 2 {
+		t.Errorf("session2 Count = (%d, %v), want (2, nil)", n, err)
+	}
+
+	// Clearing session1 drops its count to 0; session2 unaffected.
+	if err := store.Clear("session1"); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := store.Count("session1"); err != nil || n != 0 {
+		t.Errorf("session1 Count after Clear = (%d, %v), want (0, nil)", n, err)
+	}
+	if n, err := store.Count("session2"); err != nil || n != 2 {
+		t.Errorf("session2 Count after session1 Clear = (%d, %v), want (2, nil)", n, err)
+	}
+}
+
 func TestStore_Close(t *testing.T) {
 	tmpFile, err := os.CreateTemp("", "unibrow-test-*.db")
 	if err != nil {

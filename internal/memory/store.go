@@ -163,6 +163,20 @@ func (s *Store) IncrementUsage(id int64) error {
 	return err
 }
 
+// Count returns the total number of memory entries for a session.
+// Used by callers that paginate or truncate (e.g. `context show`)
+// to report the total count vs. the number shown.
+func (s *Store) Count(sessionID string) (int, error) {
+	var n int
+	if err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM memory WHERE session_id = ?`,
+		sessionID,
+	).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count: %w", err)
+	}
+	return n, nil
+}
+
 // GetRecent returns the most recent memory entries for a session.
 func (s *Store) GetRecent(sessionID string, limit int) ([]MemoryEntry, error) {
 	rows, err := s.db.Query(

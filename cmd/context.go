@@ -69,13 +69,18 @@ func contextShow(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	total, err := store.Count(contextSessionID)
+	if err != nil {
+		return fmt.Errorf("count context: %w", err)
+	}
+
 	fmt.Printf("Context buffer for session %q:\n", contextSessionID)
 	fmt.Println("---")
 	for _, e := range entries {
 		fmt.Printf("[%s] %s\n", e.Agent, e.Content)
 	}
 	fmt.Println("---")
-	fmt.Printf("(Showing %d of %d entries)\n", len(entries), len(entries))
+	fmt.Printf("(Showing %d of %d entries)\n", len(entries), total)
 	return nil
 }
 

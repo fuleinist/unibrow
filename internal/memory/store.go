@@ -148,6 +148,26 @@ func (s *Store) Clear(sessionID string) error {
 	return nil
 }
 
+// RemoveByID deletes a single memory entry by its row ID, scoped to a
+// session. Returns (true, nil) if a row was deleted, (false, nil) if
+// no matching row exists in the session (id not found or belongs to a
+// different session). Used by `context remove <id>` to drop a single
+// entry without wiping the whole session buffer.
+func (s *Store) RemoveByID(sessionID string, id int64) (bool, error) {
+	result, err := s.db.Exec(
+		`DELETE FROM memory WHERE session_id = ? AND id = ?`,
+		sessionID, id,
+	)
+	if err != nil {
+		return false, fmt.Errorf("delete by id: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("rows affected: %w", err)
+	}
+	return rows > 0, nil
+}
+
 // ClearAll removes all memory entries.
 func (s *Store) ClearAll() error {
 	_, err := s.db.Exec(`DELETE FROM memory`)

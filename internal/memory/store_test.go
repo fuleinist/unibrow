@@ -276,3 +276,73 @@ func TestStore_Close(t *testing.T) {
 		t.Errorf("Close() error = %v", err)
 	}
 }
+
+// TestStore_RemoveByID verifies that RemoveByID deletes exactly the
+// row with the given id in the given session, returns (true, nil)
+// on success and (false, nil) when the id is unknown or belongs to a
+// different session. Used by `context remove <id>`.
+func TestStore_RemoveByID(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "unibrow-test-*.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpFile.Close()
+	defer os.Remove(tmpFile.Name())
+
+	store, err := NewStore(tmpFile.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	// Three entries in session1, one in session2. IDs are 1, 2, 3, 4.
+	for _, content := range []string{"a", "b", "c"} {
+		if _, err := store.Add("session1", "context", content); err != nil {
+			t.Fatal(err)
+		}
+	}
+	other, err := store.Add("session2", "context", "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Removing an existing id returns (true, nil) and drops one row.
+	removed, err := store.RemoveByID("session1", 2)
+	if err != nil {
+		t.Fatalf("RemoveByID(#2) error = %v", err)
+	}
+	if !removed {
+		t.Error("RemoveByID(#2) returned removed=false, want true")
+	}
+	if n, _ := store.Count("session1"); n != 2 {
+		t.Errorf("session1 count after remove = %d, want 2", n)
+	}
+
+	// Removing the same id again returns (false, nil) — not an error,
+	// because the caller wants to distinguish "id not found" from
+	// "store failure".
+	removed, err = store.RemoveByID("session1", 2)
+	if err != nil {
+		t.Fatalf("RemoveByID(#2) second call error = %v", err)
+	}
+	if removed {
+		t.Error("RemoveByID(#2) second call returned removed=true, want false")
+	}
+
+	// Removing an id that belongs to a different session returns
+	// (false, nil) and leaves session2 untouched. This is the safe
+	// minimum scoping rule for `context remove`: don't accidentally
+	// delete an entry from another session just because IDs can
+	// collide in theory.
+	removed, err = store.RemoveByID("session1", other.ID)
+	if err != nil {
+		t.Fatalf("RemoveByID(cross-session) error = %v", err)
+	}
+	if removed {
+		t.Error("RemoveByID(cross-session) returned removed=true, want false")
+	}
+	otherEntries, _ := store.List("session2")
+	if len(otherEntries) != 1 {
+		t.Errorf("session2 entries = %d, want 1 (untouched)", len(otherEntries))
+	}
+}

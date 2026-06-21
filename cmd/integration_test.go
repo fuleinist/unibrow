@@ -176,4 +176,60 @@ func TestContextAddMultiWordArgs(t *testing.T) {
 	}
 }
 
+// TestContextRemoveByID verifies that `context remove <id>` actually
+// drops a single entry from the context buffer (regression: the
+// previous implementation was a stub that told users to run
+// `memory clear`).
+func TestContextRemoveByID(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	// Seed two context entries. contextAdd assigns IDs sequentially,
+	// so the first inserted has ID 1 and the second has ID 2.
+	if err := contextAdd(nil, []string{"first"}); err != nil {
+		t.Fatalf("first contextAdd failed: %v", err)
+	}
+	if err := contextAdd(nil, []string{"second"}); err != nil {
+		t.Fatalf("second contextAdd failed: %v", err)
+	}
+
+	if err := contextRemove(nil, []string{"1"}); err != nil {
+		t.Fatalf("contextRemove #1 failed: %v", err)
+	}
+
+	store, err := memory.NewStore(filepath.Join(tmpDir, ".unibrow", "memory.db"))
+	if err != nil {
+		t.Fatalf("open store for verification: %v", err)
+	}
+	defer store.Close()
+
+	entries, err := store.List("default")
+	if err != nil {
+		t.Fatalf("list entries: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("len(entries) after remove = %d, want 1", len(entries))
+	}
+	if entries[0].Content != "second" {
+		t.Errorf("remaining content = %q, want %q", entries[0].Content, "second")
+	}
+	if entries[0].ID != 2 {
+		t.Errorf("remaining id = %d, want 2", entries[0].ID)
+	}
+}
+
+// TestContextRemoveRejectsNonNumeric verifies that `context remove`
+// returns a clear error for non-numeric args instead of silently
+// doing nothing or printing a "use memory clear" hint.
+func TestContextRemoveRejectsNonNumeric(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	if err := contextRemove(nil, []string{"not-a-number"}); err == nil {
+		t.Fatal("contextRemove accepted non-numeric arg, want error")
+	}
+}
+
 

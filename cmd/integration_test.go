@@ -176,4 +176,38 @@ func TestContextAddMultiWordArgs(t *testing.T) {
 	}
 }
 
+// TestContextRemoveNotFound verifies that removing an id that does not
+// exist in the current session is a non-fatal no-op (with a friendly
+// message), not a hard error.
+func TestContextRemoveNotFound(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	prevSession := contextSessionID
+	contextSessionID = "remove-test"
+	defer func() { contextSessionID = prevSession }()
+
+	if err := contextRemove(nil, []string{"9999"}); err != nil {
+		t.Fatalf("contextRemove on missing id should be non-fatal, got: %v", err)
+	}
+}
+
+// TestContextRemoveInvalidID verifies that a non-numeric id returns a
+// friendly error mentioning the bad input, instead of panicking or
+// silently no-op'ing.
+func TestContextRemoveInvalidID(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	err := contextRemove(nil, []string{"not-a-number"})
+	if err == nil {
+		t.Fatal("contextRemove with non-numeric id should return an error")
+	}
+	if !strings.Contains(err.Error(), "not-a-number") {
+		t.Errorf("error = %q, want it to mention the bad input", err.Error())
+	}
+}
+
 

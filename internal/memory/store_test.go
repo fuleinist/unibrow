@@ -276,3 +276,99 @@ func TestStore_Close(t *testing.T) {
 		t.Errorf("Close() error = %v", err)
 	}
 }
+
+// TestStore_RemoveByID verifies that RemoveByID deletes exactly the
+// row identified by (sessionID, id) and leaves siblings alone. It is
+// the underlying primitive that `unibrow context remove <id>` calls
+// — the CLI smoke tests cover parse + not-found paths; this one
+// covers the actual delete semantics.
+func TestStore_RemoveByID(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "unibrow-test-*.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpFile.Close()
+	defer os.Remove(tmpFile.Name())
+
+	store, err := NewStore(tmpFile.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	first, err := store.Add("session1", "context", "foo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := store.Add("session1", "context", "bar")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Remove the first entry; should return (true, nil).
+	removed, err := store.RemoveByID("session1", first.ID)
+	if err != nil {
+		t.Fatalf("RemoveByID first: %v", err)
+	}
+	if !removed {
+		t.Error("RemoveByID(first) = false, want true")
+	}
+
+	entries, err := store.List("session1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("len(entries) after remove = %d, want 1", len(entries))
+	}
+	if entries[0].ID != second.ID {
+		t.Errorf("remaining entry ID = %d, want %d", entries[0].ID, second.ID)
+	}
+	if entries[0].Content != "bar" {
+		t.Errorf("remaining entry content = %q, want %q", entries[0].Content, "bar")
+	}
+
+	// Removing again should return (false, nil) — no error, just no match.
+	removed, err = store.RemoveByID("session1", first.ID)
+	if err != nil {
+		t.Fatalf("RemoveByID (re-remove) error = %v, want nil", err)
+	}
+	if removed {
+		t.Error("RemoveByID on already-removed id = true, want false")
+	}
+
+	// Cross-session isolation: an id belonging to session2 must NOT be
+	// removable via session1, even if a row with that id exists in session2.
+	if _, err := store.Add("session2", "context", "x"); err != nil {
+		t.Fatal(err)
+	}
+	all, err := store.ListAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("len(all) after cross-session add = %d, want 2", len(all))
+	}
+	// Pick the id from session2 by listing it.
+	sess2, err := store.List("session2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	crossID := sess2[0].ID
+	removed, err = store.RemoveByID("session1", crossID)
+	if err != nil {
+		t.Fatalf("RemoveByID cross-session error = %v, want nil", err)
+	}
+	if removed {
+		t.Error("RemoveByID cross-session = true, want false (wrong session)")
+	}
+	// The session2 row must still be there.
+	sess2After, err := store.List("session2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sess2After) != 1 {
+		t.Errorf("len(session2) after cross-session remove = %d, want 1", len(sess2After))
+	}
+}
+

@@ -139,6 +139,25 @@ func (s *Store) ListAll() ([]MemoryEntry, error) {
 	return entries, nil
 }
 
+// RemoveByID removes a single memory entry by id, scoped to the given
+// session. Returns (true, nil) if a row was deleted, (false, nil) if no
+// row matched the (session, id) pair — e.g. wrong session, or the id
+// has already been removed. Errors are reserved for driver failures.
+func (s *Store) RemoveByID(sessionID string, id int64) (bool, error) {
+	result, err := s.db.Exec(
+		`DELETE FROM memory WHERE session_id = ? AND id = ?`,
+		sessionID, id,
+	)
+	if err != nil {
+		return false, fmt.Errorf("delete by id: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("rows affected: %w", err)
+	}
+	return n > 0, nil
+}
+
 // Clear removes all memory entries for a session.
 func (s *Store) Clear(sessionID string) error {
 	_, err := s.db.Exec(`DELETE FROM memory WHERE session_id = ?`, sessionID)

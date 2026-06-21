@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/fuleinist/unibrow/internal/memory"
@@ -103,9 +104,27 @@ func contextAdd(cmd *cobra.Command, args []string) error {
 }
 
 func contextRemove(cmd *cobra.Command, args []string) error {
-	// Note: This would need a RemoveByID method in the store
-	// For now, use memory clear
-	fmt.Println("Use 'unibrow memory clear' to remove memory entries")
+	id, err := strconv.ParseInt(args[0], 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid id: %s (must be a number)", args[0])
+	}
+
+	store, err := memory.NewStore(getMemoryDBPath())
+	if err != nil {
+		return fmt.Errorf("open store: %w", err)
+	}
+	defer store.Close()
+
+	removed, err := store.RemoveByID(contextSessionID, id)
+	if err != nil {
+		return fmt.Errorf("remove context: %w", err)
+	}
+
+	if removed {
+		fmt.Printf("Removed context entry #%d\n", id)
+	} else {
+		fmt.Printf("No context entry #%d in session %q\n", id, contextSessionID)
+	}
 	return nil
 }
 
